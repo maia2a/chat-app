@@ -20,7 +20,11 @@ app.use(cors());
 app.use(express.json());
 
 // Conexão com MongoDB
-mongoose.connect(process.env.MONGO_URI)
+mongoose.connect(process.env.MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+  serverSelectionTimeoutMS: 5000
+})
   .then(() => console.log('MongoDB conectado'))
   .catch(err => console.log(err));
 
@@ -47,16 +51,32 @@ io.on('connection', (socket) => {
   console.log('Novo cliente conectado:', socket.id);
 
   // Enviar mensagens antigas ao conectar
-  socket.emit('previousMessages', async () => {
-    const messages = await Message.find().sort({ createdAt: 'asc' });
-    return messages;
+  socket.emit('requestPreviousMessages', async () => {
+    try {
+      const messages = await Message.find().sort({ createdAt: 'asc' });
+      const formattedMessages = messages.map(msg => ({
+        username: msg.username,
+        text: msg.text,
+        createdAt: msg.createdAt
+      }));
+      console.log('Enviando mensagens antigas:', formattedMessages);
+      socket.emit('previousMessages', formattedMessages);
+    } catch (err) {
+      console.log('Erro ao buscar mensagens:', err);
+      socket.emit('previousMessages', []);
+    }
   });
 
   // Lidar com nova mensagem
   socket.on('sendMessage', async (data) => {
     const newMessage = new Message(data);
     await newMessage.save();
-    io.emit('receiveMessage', newMessage); // Broadcast para todos os clientes
+    const formattedMessage = {
+      username: newMessage.username,
+      text: newMessage.text,
+      createdAt: newMessage.createdAt
+    }
+    io.emit('receiveMessage', formattedMessage); // Broadcast para todos os clientes
   });
 
   // Lidar com desconexão
